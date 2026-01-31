@@ -4,7 +4,7 @@ from schema.models import QualityMetrics
 
 quality_agent = LlmAgent(
     name="QualityAgent",
-    model=Gemini(model="gemini-1.5-flash"),
+    model=Gemini(model="gemini-2.5-flash-lite"),
     instruction="""
     You are a Sales Quality Assurance Specialist.
     

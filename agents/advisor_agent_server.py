@@ -3,7 +3,7 @@ from google.adk.models.google_llm import Gemini
 
 advisor_agent = LlmAgent(
     name="AdvisorAgent",
-    model=Gemini(model="gemini-1.5-flash"),
+    model=Gemini(model="gemini-2.5-flash-lite"),
     instruction="""
     You are a Strategic Sales Advisor with 15+ years of B2B sales experience.
     

@@ -4,7 +4,7 @@ from schema.models import SalesInsights
 
 analyst_agent = LlmAgent(
     name="AnalystAgent",
-    model=Gemini(model="gemini-1.5-flash"),
+    model=Gemini(model="gemini-2.5-flash-lite"),
     instruction="""
     You are a Senior Sales Data Analyst specializing in B2B sales call analysis.
     

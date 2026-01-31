@@ -6,7 +6,7 @@ from datetime import datetime
 
 crm_formatter_agent = LlmAgent(
     name="CRMFormatterAgent",
-    model=Gemini(model="gemini-1.5-flash"),
+    model=Gemini(model="gemini-2.5-flash-lite"),
     instruction="""
     You are a CRM Data Formatter.
     

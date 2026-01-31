@@ -7,6 +7,26 @@ from dotenv import load_dotenv
 from agents.postcall_orchestrator import postcall_orchestrator
 from google.adk.runners import InMemoryRunner
 
+
+# Try to import the orchestrator and runner
+try:
+    from agents.postcall_orchestrator import postcall_orchestrator
+    from google.adk.runners import InMemoryRunner
+    USE_RUNNER = True
+except ImportError as e:
+    st.warning(f"⚠️  Google ADK import issue: {e}")
+    USE_RUNNER = False
+
+# Import manual fallback
+try:
+    from manual_pipeline import run_manual_pipeline_sync
+    USE_MANUAL = True
+except ImportError:
+    USE_MANUAL = False
+
+# Load environment variables
+load_dotenv()
+
 # Load environment variables
 load_dotenv()
 
@@ -50,6 +70,298 @@ if 'processing' not in st.session_state:
 if 'results' not in st.session_state:
     st.session_state.results = None
 
+# Header
+st.markdown('<div class="main-header">🚀 SalesOps AI Assistant</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">AI-Powered Post-Call Analysis & CRM Automation</div>', unsafe_allow_html=True)
+
+# Sidebar - Configuration & Info
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    
+    # Check environment setup
+    st.subheader("System Status")
+    
+    api_key = os.getenv("GOOGLE_API_KEY")
+    crm_sheet = os.getenv("CRM_SHEET_NAME")
+    service_account_exists = os.path.exists("service_account.json")
+    
+    if api_key and api_key != "your_gemini_api_key":
+        st.success("✅ Google API Key configured")
+    else:
+        st.error("❌ Google API Key missing")
+        st.info("Add GOOGLE_API_KEY to your .env file")
+    
+    if service_account_exists:
+        st.success("✅ Service Account configured")
+    else:
+        st.warning("⚠️ service_account.json not found")
+        st.info("CRM updates will be disabled until you add your Google Service Account credentials")
+    
+    st.info(f"📊 CRM Sheet: {crm_sheet}")
+    
+    st.divider()
+    
+    st.subheader("📖 How It Works")
+    st.markdown("""
+    1. **Upload** your sales call recording or paste transcript
+    2. **AI Analysis** extracts key insights
+    3. **Quality Review** assesses call performance
+    4. **CRM Update** saves data automatically
+    5. **Strategic Advice** provides next best actions
+    """)
+    
+    st.divider()
+    
+    st.subheader("🎯 Features")
+    st.markdown("""
+    - ✨ Multi-modal input (Audio/Text)
+    - 🧠 AI-powered analysis
+    - 📊 Call quality scoring
+    - 📧 Auto-generated follow-ups
+    - 💾 Automated CRM updates
+    - 🎯 Strategic recommendations
+    """)
+
+# Main content area
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.subheader("📥 Input")
+    '''
+    # Input mode selection
+    input_mode = st.radio(
+        "Select Input Type:",
+        ["Text Transcript", "Audio File"],
+        horizontal=True,
+        help="Choose how you want to provide the sales call data"
+    )
+    '''
+    
+    user_input = None
+    input_mode = "Text Transcript"
+    
+    if input_mode == "Audio File":
+        st.info("🎵 Audio transcription feature coming soon! For now, please use text transcript.")
+        uploaded_file = st.file_uploader(
+            "Upload Recording",
+            type=["mp3", "wav", "m4a"],
+            help="Supported formats: MP3, WAV, M4A"
+        )
+        if uploaded_file:
+            st.audio(uploaded_file)
+            user_input = f"[Audio file: {uploaded_file.name}]"
+            st.warning("Note: Audio transcription is not yet implemented. Please use text transcript instead.")
+    else:
+        user_input = st.text_area(
+            "Paste Call Transcript:",
+            height=300,
+            placeholder="""Example:
+            
+Rep: Hi John, thanks for taking the time today. How are you?
+
+Prospect: Good, thanks for reaching out. I've been looking into solutions for our data pipeline issues.
+
+Rep: Great! Can you tell me more about the challenges you're facing?
+
+Prospect: Well, we're processing about 2TB of data daily, and our current ETL process is taking too long...
+
+[Continue with your transcript]
+            """,
+            help="Paste the full transcript of your sales call here"
+        )
+
+with col2:
+    st.subheader("🎬 Actions")
+    
+    # Process button
+    process_btn = st.button(
+        "🚀 Analyze Call",
+        type="primary",
+        disabled=st.session_state.processing or not user_input or (input_mode == "Audio File" and uploaded_file),
+        use_container_width=True
+    )
+    
+    if st.session_state.results:
+        if st.button("🔄 Clear Results", use_container_width=True):
+            st.session_state.results = None
+            st.rerun()
+    
+    st.divider()
+    
+    # Quick stats if results exist
+    if st.session_state.results:
+        st.metric("Sentiment Score", f"{st.session_state.results.get('sentiment_score', 'N/A')}/10")
+        st.metric("Call Quality", f"{st.session_state.results.get('call_quality', 'N/A')}/5")
+
+
+# Processing logic
+if process_btn and user_input:
+    st.session_state.processing = True
+    
+    with st.spinner("🔄 Processing your sales call..."):
+        try:
+            # Create progress indicators
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            result = None
+            
+            # Try Method 1: Google ADK Runner (preferred)
+            if USE_RUNNER:
+                try:
+                    status_text.text("📊 Using Google ADK Runner...")
+                    progress_bar.progress(10)
+                    
+                    runner = InMemoryRunner(postcall_orchestrator)
+                    initial_state = {"input": user_input}
+                    
+                    status_text.text("🤖 Running AI agents...")
+                    progress_bar.progress(30)
+                    
+                    # Try different API patterns
+                    try:
+                        # Pattern 1: Pass state dict
+                        result = asyncio.run(runner.run(initial_state))
+                    except TypeError:
+                        # Pattern 2: No arguments (state passed in constructor)
+                        runner = InMemoryRunner(postcall_orchestrator, initial_state)
+                        result = asyncio.run(runner.run())
+                    
+                    progress_bar.progress(75)
+                    status_text.text("✅ ADK Runner succeeded!")
+                    
+                except Exception as runner_error:
+                    st.warning(f"⚠️  ADK Runner failed: {runner_error}")
+                    result = None
+            
+            # Method 2: Manual Pipeline Fallback
+            if result is None and USE_MANUAL:
+                status_text.text("🔄 Using manual pipeline fallback...")
+                progress_bar.progress(20)
+                
+                result = run_manual_pipeline_sync(user_input)
+                
+                progress_bar.progress(75)
+                status_text.text("✅ Manual pipeline succeeded!")
+            
+            # Method 3: Emergency fallback - simple processing
+            if result is None:
+                status_text.text("🔄 Using basic processing...")
+                st.error("❌ Both ADK Runner and manual pipeline failed.")
+                st.info("📝 Please check your Google ADK installation and try again.")
+                
+                # Show installation help
+                with st.expander("🔧 Troubleshooting"):
+                    st.code("""
+# Reinstall Google ADK
+pip uninstall google-adk -y
+pip install google-adk
+
+# Or try updating
+pip install --upgrade google-adk
+
+# Check if it's installed correctly
+python -c "from google.adk.runners import InMemoryRunner; print('✅ OK')"
+                    """)
+                
+                progress_bar.empty()
+                status_text.empty()
+                st.session_state.processing = False
+                st.stop()
+            
+            progress_bar.progress(85)
+            status_text.text("✨ Formatting results...")
+            
+            # Store results
+            st.session_state.results = {
+                'structured_data': result.get('structured_data', {}),
+                'quality_metrics': result.get('quality_metrics', {}),
+                'strategic_advice': result.get('strategic_advice', ''),
+                'crm_status': result.get('crm_status', ''),
+                'sentiment_score': result.get('structured_data', {}).get('sentiment_score', 'N/A'),
+                'call_quality': result.get('quality_metrics', {}).get('call_quality_score', 'N/A'),
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            progress_bar.progress(100)
+            status_text.text("✨ All done!")
+            
+            st.success("✅ Pipeline executed successfully!")
+            progress_bar.empty()
+            status_text.empty()
+            
+        except Exception as e:
+            st.error(f"❌ Error processing call: {str(e)}")
+            
+            with st.expander("🔍import streamlit as st"):
+                st.write("**Possible Solutions:**")
+
+import asyncio
+import os
+from datetime import datetime
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Try to import the orchestrator and runner
+try:
+    from agents.postcall_orchestrator import postcall_orchestrator
+    from google.adk.runners import InMemoryRunner
+    USE_RUNNER = True
+except ImportError as e:
+    st.warning(f"⚠️  Google ADK import issue: {e}")
+    USE_RUNNER = False
+
+# Import manual fallback
+try:
+    from manual_pipeline import run_manual_pipeline_sync
+    USE_MANUAL = True
+except ImportError:
+    USE_MANUAL = False
+
+# Load environment variables
+load_dotenv()
+
+# Page configuration
+st.set_page_config(
+    page_title="SalesOps AI Assistant",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better UI
+st.markdown("""
+    <style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        margin-bottom: 0.5rem;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #666;
+        margin-bottom: 2rem;
+    }
+    .stAlert {
+        margin-top: 1rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+if 'processing' not in st.session_state:
+    st.session_state.processing = False
+if 'results' not in st.session_state:
+    st.session_state.results = None
+
+'''
 # Header
 st.markdown('<div class="main-header">🚀 SalesOps AI Assistant</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">AI-Powered Post-Call Analysis & CRM Automation</div>', unsafe_allow_html=True)
@@ -185,63 +497,33 @@ if process_btn and user_input:
             status_text.text("📊 Analyzing call transcript...")
             progress_bar.progress(25)
             
-            runner = InMemoryRunner(agent=postcall_orchestrator)
+            # Initialize the runner with the agent
+            runner = InMemoryRunner(postcall_orchestrator)
             
-            # Run asynchronously
+            # Create initial state with input
+            initial_state = {"input": user_input}
+            
+            # Run asynchronously with proper state
+            status_text.text("🤖 Running AI agents...")
+            progress_bar.progress(40)
+            
+            async def run_pipeline():
+                """Run the agent pipeline"""
+                return await runner.run(initial_state)
+            
+            # Execute the async function
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            events = loop.run_until_complete(runner.run_debug(user_input))
-            loop.close()
+            try:
+                result = loop.run_until_complete(run_pipeline())
+            finally:
+                loop.close()
             
-            progress_bar.progress(50)
+            progress_bar.progress(75)
             status_text.text("✅ Analysis complete! Formatting results...")
-            
-            # --- DEEP EXTRACTION LOGIC ---
-            result_data = {}
-            if events and len(events) > 0:
-                # 1. Get the last event
-                final_event = events[-1]
-                
-                # 2. Extract the payload (handling Pydantic or dict)
-                payload = final_event.model_dump() if hasattr(final_event, 'model_dump') else vars(final_event)
-                
-                # 3. Look for the data in known ADK locations
-                # We check 'output', 'state', or 'result'
-                result_candidate = payload.get('output') or payload.get('state') or payload.get('result')
-                
-                # 4. If result_candidate is an object/Task, extract ITS output
-                if hasattr(result_candidate, 'output'):
-                    result_data = result_candidate.output
-                elif isinstance(result_candidate, dict):
-                    result_data = result_candidate
-                else:
-                    # Last ditch effort: use the payload itself if it looks like our data
-                    result_data = payload
-
-            # --- DEBUG: See what is actually inside ---
-            with st.expander("🔍 System Debug: Raw Data Structure"):
-                st.write("Final Event Type:", type(events[-1]))
-                st.json(payload) # This will show us exactly where the data is hiding
-            
-            # --- THE STATE ACCUMULATOR -----------------------------------------------------------------------
-            # We iterate through every event and collect the 'state_delta'
-            final_state = {}
-            
-            for event in events:
-                # Convert event to dict to access nested fields safely
-                ev_dict = event.model_dump() if hasattr(event, 'model_dump') else {}
-                
-                # Check for state_delta in the actions block
-                actions = ev_dict.get('actions', {})
-                delta = actions.get('state_delta', {})
-                if delta:
-                    # Merge this agent's output into our final_state
-                    final_state.update(delta)
             
             progress_bar.progress(100)
             status_text.text("✨ All done!")
-            
-            result = final_state    
             
             # Store results
             st.session_state.results = {
@@ -258,12 +540,25 @@ if process_btn and user_input:
             progress_bar.empty()
             status_text.empty()
             
+        except TypeError as te:
+            st.error(f"❌ API Error: Incorrect runner usage")
+            st.error("This appears to be a Google ADK API compatibility issue.")
+            with st.expander("🔧 Troubleshooting"):
+                st.write("**Possible Solutions:**")
+                st.code("""
+# Try updating Google ADK:
+pip install --upgrade google-adk
+
+# Or check the correct API usage:
+# The InMemoryRunner API may have changed
+                """)
+                st.exception(te)
         except Exception as e:
             st.error(f"❌ Error processing call: {str(e)}")
             st.exception(e)
         finally:
             st.session_state.processing = False
-
+'''
 # Display results
 if st.session_state.results:
     st.divider()
@@ -323,13 +618,14 @@ if st.session_state.results:
     with tab3:
         st.subheader("AI-Generated Follow-up Email")
         follow_up = structured_data.get('follow_up_email', 'No email generated')
-        
+        '''
         st.text_area(
             "Email Content:",
             value=follow_up,
             height=400,
             help="Review and customize before sending"
         )
+        '''
         
         col1, col2 = st.columns(2)
         with col1:

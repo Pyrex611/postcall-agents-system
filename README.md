@@ -50,7 +50,7 @@ An AI-powered post-call automation platform that transcribes, analyzes, and proc
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone git pull origin main --allow-unrelated-histories
 cd salesops-ai-assistant
 ```
 

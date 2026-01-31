@@ -10,6 +10,18 @@ from google.adk.runners import InMemoryRunner
 # Load environment variables
 load_dotenv()
 
+import torch
+from transformers import pipeline
+
+print("Loading Whisper model into memory... please wait.")
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+transcriber = pipeline(
+    "automatic-speech-recognition", 
+    model="openai/whisper-tiny", 
+    device=device
+)
+print(f"Model loaded successfully on {device}!")
+
 # Page configuration
 st.set_page_config(
     page_title="SalesOps AI Assistant",
@@ -119,7 +131,6 @@ with col1:
     user_input = None
     
     if input_mode == "Audio File":
-        st.info("🎵 Audio transcription feature coming soon! For now, please use text transcript.")
         uploaded_file = st.file_uploader(
             "Upload Recording",
             type=["mp3", "wav", "m4a"],
@@ -127,8 +138,31 @@ with col1:
         )
         if uploaded_file:
             st.audio(uploaded_file)
-            user_input = f"[Audio file: {uploaded_file.name}]"
-            st.warning("Note: Audio transcription is not yet implemented. Please use text transcript instead.")
+            with st.spinner("Transcribing audio..."):
+                try:
+                    # 1. Read the file into bytes
+                    # Use uploaded_file directly, NOT the string input_audio
+                    audio_bytes = uploaded_file.read()
+                    
+                    # 2. Save temporarily
+                    temp_filename = f"temp_{uploaded_file.name}"
+                    with open(temp_filename, "wb") as f:
+                        f.write(audio_bytes)
+
+                    # 3. Run the local transcription
+                    # Ensure 'transcriber' is loaded (e.g., via HuggingFace pipeline)
+                    result = transcriber(temp_filename)
+                    transcript = result.get("text", "").strip()
+                    user_input = transcript
+                    
+                    st.success("Transcription complete!")
+                    st.text_area("Transcribed Text:", value=user_input, height=200)
+
+                    # 4. Clean up
+                    if os.path.exists(temp_filename):
+                        os.remove(temp_filename)
+                except Exception as e:
+                    print(f"Local Processing Error: {str(e)}")
     else:
         user_input = st.text_area(
             "Paste Call Transcript:",
@@ -190,58 +224,14 @@ if process_btn and user_input:
             # Run asynchronously
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            events = loop.run_until_complete(runner.run_debug(user_input))
+            result = loop.run_until_complete(runner.run_debug(user_input))
             loop.close()
             
             progress_bar.progress(50)
             status_text.text("✅ Analysis complete! Formatting results...")
             
-            # --- DEEP EXTRACTION LOGIC ---
-            result_data = {}
-            if events and len(events) > 0:
-                # 1. Get the last event
-                final_event = events[-1]
-                
-                # 2. Extract the payload (handling Pydantic or dict)
-                payload = final_event.model_dump() if hasattr(final_event, 'model_dump') else vars(final_event)
-                
-                # 3. Look for the data in known ADK locations
-                # We check 'output', 'state', or 'result'
-                result_candidate = payload.get('output') or payload.get('state') or payload.get('result')
-                
-                # 4. If result_candidate is an object/Task, extract ITS output
-                if hasattr(result_candidate, 'output'):
-                    result_data = result_candidate.output
-                elif isinstance(result_candidate, dict):
-                    result_data = result_candidate
-                else:
-                    # Last ditch effort: use the payload itself if it looks like our data
-                    result_data = payload
-
-            # --- DEBUG: See what is actually inside ---
-            with st.expander("🔍 System Debug: Raw Data Structure"):
-                st.write("Final Event Type:", type(events[-1]))
-                st.json(payload) # This will show us exactly where the data is hiding
-            
-            # --- THE STATE ACCUMULATOR -----------------------------------------------------------------------
-            # We iterate through every event and collect the 'state_delta'
-            final_state = {}
-            
-            for event in events:
-                # Convert event to dict to access nested fields safely
-                ev_dict = event.model_dump() if hasattr(event, 'model_dump') else {}
-                
-                # Check for state_delta in the actions block
-                actions = ev_dict.get('actions', {})
-                delta = actions.get('state_delta', {})
-                if delta:
-                    # Merge this agent's output into our final_state
-                    final_state.update(delta)
-            
             progress_bar.progress(100)
             status_text.text("✨ All done!")
-            
-            result = final_state    
             
             # Store results
             st.session_state.results = {
