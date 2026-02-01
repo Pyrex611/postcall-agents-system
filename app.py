@@ -223,7 +223,7 @@ if process_btn and user_input:
                 st.write("Final Event Type:", type(events[-1]))
                 st.json(payload) # This will show us exactly where the data is hiding
             
-            # --- THE STATE ACCUMULATOR -----------------------------------------------------------------------
+            # --- THE STATE ACCUMULATOR ---------------------------------------------------------------------
             # We iterate through every event and collect the 'state_delta'
             final_state = {}
             
@@ -241,7 +241,7 @@ if process_btn and user_input:
             progress_bar.progress(100)
             status_text.text("✨ All done!")
             
-            result = final_state    
+            result = final_state
             
             # Store results
             st.session_state.results = {
@@ -251,7 +251,8 @@ if process_btn and user_input:
                 'crm_status': result.get('crm_status', ''),
                 'sentiment_score': result.get('structured_data', {}).get('sentiment_score', 'N/A'),
                 'call_quality': result.get('quality_metrics', {}).get('call_quality_score', 'N/A'),
-                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'follow-up_email': result.get('follow-up_email', '')
             }
             
             st.success("✅ Pipeline executed successfully!")
@@ -322,7 +323,7 @@ if st.session_state.results:
     
     with tab3:
         st.subheader("AI-Generated Follow-up Email")
-        follow_up = structured_data.get('follow_up_email', 'No email generated')
+        follow_up = result.get('follow-up_email', 'No email generated')
         
         st.text_area(
             "Email Content:",
